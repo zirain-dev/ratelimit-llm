@@ -101,7 +101,7 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 		// We need to know it in both the OK and OVER_LIMIT scenarios.
 		limitInfo.nearLimitThreshold = uint32(math.Floor(float64(float32(limitInfo.overLimitThreshold) * this.nearLimitRatio)))
 		logger.Debugf("cache key: %s current: %d", key, limitInfo.limitAfterIncrease)
-		if limitInfo.limitAfterIncrease > limitInfo.overLimitThreshold {
+		if limitInfo.limitAfterIncrease > limitInfo.overLimitThreshold && limitInfo.limitBeforeIncrease >= limitInfo.overLimitThreshold {
 			isOverLimit = true
 			responseDescriptorStatus = this.generateResponseDescriptorStatus(pb.RateLimitResponse_OVER_LIMIT,
 				limitInfo.limit.Limit, 0)
@@ -122,8 +122,14 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 				}
 			}
 		} else {
+			// make sure it doesn't go negative(out of bounds).
+			if limitInfo.limitAfterIncrease > limitInfo.overLimitThreshold {
+				limitInfo.limitAfterIncrease = limitInfo.overLimitThreshold
+			}
+			limitRemaining := limitInfo.overLimitThreshold - limitInfo.limitAfterIncrease
+
 			responseDescriptorStatus = this.generateResponseDescriptorStatus(pb.RateLimitResponse_OK,
-				limitInfo.limit.Limit, limitInfo.overLimitThreshold-limitInfo.limitAfterIncrease)
+				limitInfo.limit.Limit, limitRemaining)
 
 			// The limit is OK but we additionally want to know if we are near the limit.
 			this.checkNearLimitThreshold(limitInfo, hitsAddend)

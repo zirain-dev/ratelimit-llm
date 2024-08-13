@@ -21,9 +21,20 @@ descriptors:
           requests_per_unit: 2
       - key: destination_cluster
         value: mock
+        descriptors:
+          - key: x-rl-type
+            value: tpm
+            rate_limit:
+              unit: minute
+              requests_per_unit: 100
+          - key: x-rl-type
+            value: rpm
+            rate_limit:
+              unit: minute
+              requests_per_unit: 2
         rate_limit:
           unit: minute
-          requests_per_unit: 1
+          requests_per_unit: 2
       - key: destination_cluster
         value: override
         rate_limit:

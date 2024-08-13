@@ -50,6 +50,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 
 	// request.HitsAddend could be 0 (default value) if not specified by the caller in the RateLimit request.
 	hitsAddend := utils.Max(1, request.HitsAddend)
+	logger.Debugf("hits_addend: %d", hitsAddend)
 
 	// First build a list of all cache keys that we are actually going to hit.
 	cacheKeys := this.baseRateLimiter.GenerateCacheKeys(request, limits, hitsAddend)

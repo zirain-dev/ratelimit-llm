@@ -47,6 +47,57 @@ static_resources:
                 codec_type: AUTO
                 stat_prefix: ingress
                 http_filters:
+                  # first ratelimit for RPM
+                  - name: envoy.filters.http.set_filter_state
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.set_filter_state.v3.Config
+                      on_request_headers:
+                        - object_key: envoy.ratelimit.hits_addend # must have an object factory
+                          format_string:
+                            text_format_source:
+                              inline_string: "%REQ(RL-HITS-RPM)%"
+                  - name: envoy.filters.http.header_mutation
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutation
+                      mutations:
+                        request_mutations:
+                          - append:
+                              header:
+                                key: "x-rl-type"
+                                value: "rpm"
+                  - name: envoy.filters.http.ratelimit
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+                      domain: rl
+                      request_type: external
+                      stage: 0
+                      rate_limited_as_resource_exhausted: true
+                      failure_mode_deny: false
+                      enable_x_ratelimit_headers: DRAFT_VERSION_03
+                      rate_limit_service:
+                        grpc_service:
+                          envoy_grpc:
+                            cluster_name: ratelimit
+                        transport_api_version: V3
+                  # second ratelimit for TPM
+                  - name: envoy.filters.http.set_filter_state
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.set_filter_state.v3.Config
+                      on_request_headers:
+                        - object_key: envoy.ratelimit.hits_addend # must have an object factory
+                          format_string:
+                            text_format_source:
+                              inline_string: "%REQ(RL-HITS-TPM)%"
+                  - name: envoy.filters.http.header_mutation
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutation
+                      mutations:
+                        request_mutations:
+                          - append:
+                              header:
+                                key: "x-rl-type"
+                                value: "tpm"
+                              appendAction: OVERWRITE_IF_EXISTS
                   - name: envoy.filters.http.ratelimit
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
@@ -79,6 +130,9 @@ static_resources:
                               - actions:
                                   - source_cluster: {} # This action's value is populated by the "service-cluster" arg passed in when starting Envoy. In this example, it's "proxy" (see docker-compose-example.yml)
                                   - destination_cluster: {} # This action's value is populated by the value set in the above egress "cluster" field -- "mock"
+                                  - request_headers:
+                                      header_name: "x-rl-type"
+                                      descriptor_key: "x-rl-type"
                         - match:
                             prefix: /header
                           route:
