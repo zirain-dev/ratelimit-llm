@@ -24,6 +24,16 @@ services:
       - ratelimit-network
     volumes:
       - ./examples/prom-statsd-exporter/conf.yaml:/etc/statsd-exporter/conf.yaml
+  
+  extproc:
+    build:
+      context: ./ext-proc
+    environment:
+      CLUSTER_NAME: "ext_proc"
+    expose:
+     - 50051
+    networks:
+      - ratelimit-network
 
   ratelimit:
     image: ghcr.io/zirain/ratelimit:latest
@@ -76,8 +86,10 @@ services:
       - "--concurrency 1"
       - "--mode serve"
       - "--log-level info"
+      - "--component-log-level jwt:debug"
     volumes:
       - ./examples/envoy/proxy.yaml:/etc/envoy/envoy.yaml
+      - ./jwks.json:/etc/envoy/jwks.json
     networks:
       - ratelimit-network
     expose:

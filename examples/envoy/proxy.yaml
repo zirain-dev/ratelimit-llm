@@ -34,6 +34,34 @@ static_resources:
                     socket_address:
                       address: envoy-mock
                       port_value: 9999
+    - name: ext-proc
+      connect_timeout: 5s
+      type: strict_dns
+      lb_policy: round_robin
+      http2_protocol_options: {}
+      load_assignment:
+        cluster_name: ext-proc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: extproc
+                      port_value: 50051
+    - name: raw_githubusercontent_com_443
+      connect_timeout: 5s
+      type: strict_dns
+      lb_policy: round_robin
+      http2_protocol_options: {}
+      load_assignment:
+        cluster_name: raw_githubusercontent_com_443
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: raw.githubusercontent.com
+                      port_value: 443
   listeners:
     - address:
         socket_address:
@@ -44,79 +72,131 @@ static_resources:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                accessLog:
+                  - name: envoy.access_loggers.file
+                    typedConfig:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                      logFormat:
+                        textFormat: |
+                          [%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %RESPONSE_CODE_DETAILS% %CONNECTION_TERMINATION_DETAILS% "%UPSTREAM_TRANSPORT_FAILURE_REASON%" %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%" %UPSTREAM_CLUSTER% %UPSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_REMOTE_ADDRESS% %REQUESTED_SERVER_NAME% %ROUTE_NAME%
+                      path: /dev/stdout
                 codec_type: AUTO
                 stat_prefix: ingress
                 http_filters:
-                  # first ratelimit for RPM
-                  - name: envoy.filters.http.set_filter_state
+                  - name: envoy.filters.http.jwt_authn
+                    typedConfig:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+                      providers:
+                        "jwt1":
+                          forward: true
+                          local_jwks:
+                            filename: /etc/envoy/jwks.json
+                          payloadInMetadata: "playload"
+                      requirementMap:
+                        "route":
+                          providerName: jwt1
+                  - name: envoy.filters.http.set_metadata
                     typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.set_filter_state.v3.Config
-                      on_request_headers:
-                        - object_key: envoy.ratelimit.hits_addend # must have an object factory
-                          format_string:
-                            text_format_source:
-                              inline_string: "%REQ(RL-HITS-RPM)%"
-                  - name: envoy.filters.http.header_mutation
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.set_metadata.v3.Config
+                      metadata_namespace: "test1"
+                      value:
+                        key1: val1
+                  - name: envoy.filters.http.ext_proc
                     typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutation
-                      mutations:
-                        request_mutations:
-                          - append:
-                              header:
-                                key: "x-rl-type"
-                                value: "rpm"
-                  - name: envoy.filters.http.ratelimit
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
-                      domain: rl
-                      request_type: external
-                      stage: 0
-                      rate_limited_as_resource_exhausted: true
-                      failure_mode_deny: false
-                      enable_x_ratelimit_headers: DRAFT_VERSION_03
-                      rate_limit_service:
-                        grpc_service:
-                          envoy_grpc:
-                            cluster_name: ratelimit
-                        transport_api_version: V3
-                  # second ratelimit for TPM
-                  - name: envoy.filters.http.set_filter_state
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.set_filter_state.v3.Config
-                      on_request_headers:
-                        - object_key: envoy.ratelimit.hits_addend # must have an object factory
-                          format_string:
-                            text_format_source:
-                              inline_string: "%REQ(RL-HITS-TPM)%"
-                  - name: envoy.filters.http.header_mutation
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutation
-                      mutations:
-                        request_mutations:
-                          - append:
-                              header:
-                                key: "x-rl-type"
-                                value: "tpm"
-                              appendAction: OVERWRITE_IF_EXISTS
-                  - name: envoy.filters.http.ratelimit
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
-                      domain: rl
-                      request_type: external
-                      stage: 0
-                      rate_limited_as_resource_exhausted: true
-                      failure_mode_deny: false
-                      enable_x_ratelimit_headers: DRAFT_VERSION_03
-                      rate_limit_service:
-                        grpc_service:
-                          envoy_grpc:
-                            cluster_name: ratelimit
-                        transport_api_version: V3
+                      "@type": "type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor"
+                      failure_mode_allow: false
+                      processing_mode:
+                        request_header_mode: "SEND"
+                        response_header_mode: "SEND"
+                        request_body_mode: "NONE"
+                        response_body_mode: "NONE"
+                        request_trailer_mode: "SKIP"
+                        response_trailer_mode: "SKIP"
+                      metadata_options:
+                        forwarding_namespaces:
+                          untyped:
+                            - envoy.filters.http.jwt_authn
+                            - test1
+                          typed:
+                            - envoy.filters.http.jwt_authn
+                            - test1
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: ext-proc
+                  # # first ratelimit for RPM
+                  # - name: envoy.filters.http.set_filter_state
+                  #   typed_config:
+                  #     "@type": type.googleapis.com/envoy.extensions.filters.http.set_filter_state.v3.Config
+                  #     on_request_headers:
+                  #       - object_key: envoy.ratelimit.hits_addend # must have an object factory
+                  #         format_string:
+                  #           text_format_source:
+                  #             inline_string: "%REQ(RL-HITS-RPM)%"
+                  # - name: envoy.filters.http.header_mutation
+                  #   typed_config:
+                  #     "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutation
+                  #     mutations:
+                  #       request_mutations:
+                  #         - append:
+                  #             header:
+                  #               key: "x-rl-type"
+                  #               value: "rpm"
+                  # - name: envoy.filters.http.ratelimit
+                  #   typed_config:
+                  #     "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+                  #     domain: rl
+                  #     request_type: external
+                  #     stage: 0
+                  #     rate_limited_as_resource_exhausted: true
+                  #     failure_mode_deny: false
+                  #     enable_x_ratelimit_headers: DRAFT_VERSION_03
+                  #     rate_limit_service:
+                  #       grpc_service:
+                  #         envoy_grpc:
+                  #           cluster_name: ratelimit
+                  #       transport_api_version: V3
+                  # # second ratelimit for TPM
+                  # - name: envoy.filters.http.set_filter_state
+                  #   typed_config:
+                  #     "@type": type.googleapis.com/envoy.extensions.filters.http.set_filter_state.v3.Config
+                  #     on_request_headers:
+                  #       - object_key: envoy.ratelimit.hits_addend # must have an object factory
+                  #         format_string:
+                  #           text_format_source:
+                  #             inline_string: "%REQ(RL-HITS-TPM)%"
+                  # - name: envoy.filters.http.header_mutation
+                  #   typed_config:
+                  #     "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutation
+                  #     mutations:
+                  #       request_mutations:
+                  #         - append:
+                  #             header:
+                  #               key: "x-rl-type"
+                  #               value: "tpm"
+                  #             appendAction: OVERWRITE_IF_EXISTS
+                  # - name: envoy.filters.http.ratelimit
+                  #   typed_config:
+                  #     "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+                  #     domain: rl
+                  #     request_type: external
+                  #     stage: 0
+                  #     rate_limited_as_resource_exhausted: true
+                  #     failure_mode_deny: false
+                  #     enable_x_ratelimit_headers: DRAFT_VERSION_03
+                  #     rate_limit_service:
+                  #       grpc_service:
+                  #         envoy_grpc:
+                  #           cluster_name: ratelimit
+                  #       transport_api_version: V3
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
                 route_config:
                   name: route
+                  typedPerFilterConfig:
+                    envoy.filters.http.jwt_authn:
+                      '@type': type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.PerRouteConfig
+                      requirementName: route
                   virtual_hosts:
                     - name: backend
                       domains:
