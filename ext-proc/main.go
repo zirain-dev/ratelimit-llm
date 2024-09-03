@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	configPb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	filterPb "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
@@ -129,13 +130,26 @@ func (s *server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 						},
 					},
 				},
+				DynamicMetadata: &structpb.Struct{
+					Fields: map[string]*structpb.Value{
+						"llm.ratelimit.descriptors": {
+							Kind: &structpb.Value_StructValue{
+								StructValue: &structpb.Struct{
+									Fields: map[string]*structpb.Value{
+										"key1": {
+											Kind: &structpb.Value_StringValue{StringValue: "val1"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
 				ModeOverride: &filterPb.ProcessingMode{
 					ResponseHeaderMode: filterPb.ProcessingMode_SEND,
 					RequestBodyMode:    bodyMode,
 				},
 			}
-
-			break
 
 		case *extProcPb.ProcessingRequest_RequestBody:
 
@@ -147,6 +161,7 @@ func (s *server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 			log.Printf("Body: %+v\n", b)
 			log.Printf("EndOfStream: %v\n", b.RequestBody.EndOfStream)
 			log.Printf("Content Type: %v\n", contentType)
+			log.Printf("MetadataContext: %v\n", req.MetadataContext)
 
 			t := http.Request{
 				Method: "POST",
@@ -185,8 +200,6 @@ func (s *server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 				},
 			}
 
-			break
-
 		case *extProcPb.ProcessingRequest_ResponseHeaders:
 
 			log.Println("--- In ResponseHeaders processing")
@@ -197,6 +210,7 @@ func (s *server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 
 			log.Printf("Request: %+v\n", r)
 			log.Printf("Headers: %+v\n", h)
+			log.Printf("MetadataContext: %v\n", req.MetadataContext)
 			log.Printf("Content Type: %v\n", contentType)
 			log.Printf("Cache entry: %v\n", cacheEntry)
 
@@ -231,8 +245,6 @@ func (s *server) Process(srv extProcPb.ExternalProcessor_ProcessServer) error {
 				},
 			}
 
-			break
-
 		default:
 			log.Printf("Unknown Request type %+v\n", v)
 		}
@@ -263,7 +275,7 @@ func main() {
 	log.Println("Starting gRPC server on port :50051")
 
 	// shutdown
-	var gracefulStop = make(chan os.Signal)
+	var gracefulStop = make(chan os.Signal, 1)
 	signal.Notify(gracefulStop, syscall.SIGTERM)
 	signal.Notify(gracefulStop, syscall.SIGINT)
 	go func() {

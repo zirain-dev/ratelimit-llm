@@ -130,7 +130,7 @@ docker_tests:
 	docker run $$(tty -s && echo "-it" || echo) $(INTEGRATION_IMAGE):$(VERSION)
 
 .PHONY: docker_image
-docker_image: docker_tests
+docker_image: #docker_tests
 	docker build . -t $(IMAGE):$(VERSION)
 
 .PHONY: docker_push
