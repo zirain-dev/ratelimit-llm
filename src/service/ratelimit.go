@@ -1,25 +1,21 @@
 package ratelimit
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
 	"sync"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
-
-	"github.com/envoyproxy/ratelimit/src/settings"
-	"github.com/envoyproxy/ratelimit/src/stats"
-
-	"github.com/envoyproxy/ratelimit/src/utils"
-
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 	logger "github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/context"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/envoyproxy/ratelimit/src/assert"
 	"github.com/envoyproxy/ratelimit/src/config"
@@ -27,6 +23,9 @@ import (
 	"github.com/envoyproxy/ratelimit/src/provider"
 	"github.com/envoyproxy/ratelimit/src/redis"
 	"github.com/envoyproxy/ratelimit/src/server"
+	"github.com/envoyproxy/ratelimit/src/settings"
+	"github.com/envoyproxy/ratelimit/src/stats"
+	"github.com/envoyproxy/ratelimit/src/utils"
 )
 
 var tracer = otel.Tracer("ratelimit")
@@ -236,7 +235,17 @@ func (this *service) shouldRateLimitWorker(
 		this.stats.GlobalShadowMode.Inc()
 	}
 
+	data, _ := json.Marshal(request.Descriptors)
 	response.OverallCode = finalCode
+	response.DynamicMetadata = &structpb.Struct{
+		Fields: map[string]*structpb.Value{
+			"descriptors": {
+				Kind: &structpb.Value_StringValue{
+					StringValue: string(data),
+				},
+			},
+		},
+	}
 	return response
 }
 
