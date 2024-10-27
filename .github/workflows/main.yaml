@@ -2,6 +2,7 @@ name: Build and push :master image
 
 permissions:
   contents: read
+  packages: write
 
 on:
   push:
@@ -30,12 +31,10 @@ jobs:
 
       - name: build and push docker image
         run: |
-          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-          VERSION=master make docker_multiarch_push     # Push image tagged with "master"
+          VERSION=latest make docker_multiarch_push     # Push image tagged with "latest"
           make docker_multiarch_push                    # Push image tagged with git sha
         env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+          REGISTRY: "ghcr.io/zirain"
 
   precommits:
     runs-on: ubuntu-latest
