@@ -49,6 +49,7 @@ type service struct {
 	customHeaderResetHeader     string
 	customHeaderClock           utils.TimeSource
 	globalShadowMode            bool
+	returnDescriptorsInResponse bool
 }
 
 func (this *service) SetConfig(updateEvent provider.ConfigUpdateEvent, healthyWithAtLeastOneConfigLoad bool) {
@@ -83,6 +84,7 @@ func (this *service) SetConfig(updateEvent provider.ConfigUpdateEvent, healthyWi
 
 	rlSettings := settings.NewSettings()
 	this.globalShadowMode = rlSettings.GlobalShadowMode
+	this.returnDescriptorsInResponse = rlSettings.ReturnDescriptorsInResponse
 
 	if rlSettings.RateLimitResponseHeadersEnabled {
 		this.customHeadersEnabled = true
@@ -235,17 +237,20 @@ func (this *service) shouldRateLimitWorker(
 		this.stats.GlobalShadowMode.Inc()
 	}
 
-	data, _ := json.Marshal(request.Descriptors)
 	response.OverallCode = finalCode
-	response.DynamicMetadata = &structpb.Struct{
-		Fields: map[string]*structpb.Value{
-			"descriptors": {
-				Kind: &structpb.Value_StringValue{
-					StringValue: string(data),
+	if this.returnDescriptorsInResponse {
+		data, _ := json.Marshal(request.Descriptors)
+		response.DynamicMetadata = &structpb.Struct{
+			Fields: map[string]*structpb.Value{
+				"descriptors": {
+					Kind: &structpb.Value_StringValue{
+						StringValue: string(data),
+					},
 				},
 			},
-		},
+		}
 	}
+
 	return response
 }
 
