@@ -34,7 +34,7 @@ jobs:
           VERSION=latest make docker_multiarch_push     # Push image tagged with "latest"
           make docker_multiarch_push                    # Push image tagged with git sha
         env:
-          REGISTRY: "ghcr.io/zirain"
+          REGISTRY: "ghcr.io/zirain-dev"
 
   precommits:
     runs-on: ubuntu-latest
